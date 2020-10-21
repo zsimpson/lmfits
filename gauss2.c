@@ -73,6 +73,7 @@ void jac_gauss_2d(double *p, double *dst_jac, int m, int n, void *data) {
     //   m: number of parameters (length of p)
     //   n: number of data points
     //   data: data
+
     double amp = p[0];
     double sig_x = p[1];
     double sig_y = p[2];
@@ -81,13 +82,17 @@ void jac_gauss_2d(double *p, double *dst_jac, int m, int n, void *data) {
     double rho = p[5];
     double offset = p[6];
 
+    double pi2 = 2.0 * M_PI;
     double sgxs = sig_x * sig_x;
     double sgys = sig_y * sig_y;
     double rs = rho * rho;
     double omrs = 1.0 - rs;
     double tem_a = 1.0 / (sig_x * sig_y * omrs);
+    double denom = 2.0 * (rho - 1) * (rho + 1) * sgxs * sgys;
+    double linear_term = -2.0 * rho * sig_x * sig_y;
     int mea = (int)sqrt((double)n);
-    int k = 0;
+
+    double *dst = dst_jac;
     for (int i =0; i<mea; i++) {
         double x = (double)i;
         double xmpx = x - pos_x;
@@ -96,50 +101,49 @@ void jac_gauss_2d(double *p, double *dst_jac, int m, int n, void *data) {
             double ympy = y - pos_y;
             double tem_b = tem_a * sqrt(omrs) * exp(
                 (
-                    -2.0 * rho * sig_x * sig_y * xmpx * ympy
+                    linear_term * xmpx * ympy
                     + sgxs * ympy * ympy
                     + sgys * xmpx * xmpx
-                ) / (
-                    2.0 * (rho - 1) * (rho + 1) * sgxs * sgys
-                )
-            ) / (2.0 * M_PI);
+                ) / denom
+            ) / pi2;
 
-            dst_jac[k++] = tem_b;
+            *dst++ = tem_b;
 
-            double pr = amp * tem_b;
+            double tem_ab_amp = tem_a * tem_b * amp;
+            double xmpxy = xmpx * ympy;
 
-            dst_jac[k++] = tem_a * tem_b * amp * (
+            *dst++ = tem_ab_amp * (
                 - omrs * sgxs * sig_y
-                - rho * sig_x * xmpx * ympy
+                - rho * sig_x * xmpxy
                 + sig_y * xmpx * xmpx
             ) / sgxs;
 
-            dst_jac[k++] = -tem_a * tem_b * amp * (
+            *dst++ = - tem_ab_amp * (
                   omrs * sig_x * sgys
-                + rho * sig_y * xmpx * ympy
+                + rho * sig_y * xmpxy
                 - sig_x * ympy * ympy
             ) / sgys;
 
-            dst_jac[k++] = tem_a * (
+            *dst++ = tem_a * (
                 - rho * sig_x * ympy
                 + sig_y * xmpx
             ) * tem_b * amp / sig_x;
 
-            dst_jac[k++] = -tem_a * tem_b * amp * (
+            *dst++ = - tem_ab_amp * (
                   rho * sig_y * xmpx
                 - sig_x * ympy
             ) / sig_y;
 
-            dst_jac[k++] = -tem_a * tem_b * (
+            *dst++ = -tem_a * tem_b * (
                 rho * (
                     - omrs * sgys
                     + ympy * ympy
                 ) * sgxs
-                - sig_y * (2.0 - omrs) * ympy * xmpx * sig_x
+                - sig_y * (2.0 - omrs) * xmpxy * sig_x
                 + rho * sgys * xmpx * xmpx
             ) * amp / (sig_x * omrs * sig_y);
 
-            dst_jac[k++] = 1.0;
+            *dst++ = 1.0;
         }
     }
 }
