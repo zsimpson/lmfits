@@ -5,6 +5,7 @@
 #include "time.h"
 #include "string.h"
 #include "levmar.h"
+#include "gauss_2d.h"
 #ifndef LM_DBL_PREC
 #error Demo program assumes that levmar has been compiled with double precision, see LM_DBL_PREC!
 #endif
