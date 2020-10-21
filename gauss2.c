@@ -1,11 +1,22 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include <float.h>
+#include "stdio.h"
+#include "stdlib.h"
+#include "math.h"
+#include "float.h"
+#include "time.h"
+#include "string.h"
 #include "levmar.h"
 #ifndef LM_DBL_PREC
 #error Demo program assumes that levmar has been compiled with double precision, see LM_DBL_PREC!
 #endif
+
+
+typedef __uint64_t Uint64;
+Uint64 now() {
+    // Time in microseconds
+    struct timespec spec;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &spec);
+    return (spec.tv_sec) * 1000000 + spec.tv_nsec / 1000;
+}
 
 
 void gauss_2d(double *p, double *dst_x, int m, int n, void *data) {
@@ -23,36 +34,37 @@ void gauss_2d(double *p, double *dst_x, int m, int n, void *data) {
     double pos_y = p[4];
     double rho = p[5];
     double offset = p[6];
-    double pi2 = M_PI * 2.0;
+
+    double pi2 = 2.0 * M_PI;
     double sgxs = sig_x * sig_x;
     double sgys = sig_y * sig_y;
     double rs = rho * rho;
-    double omrs = 1.0 - rho * rho;
+    double omrs = 1.0 - rs;
     double tem_a = 1.0 / (sig_x * sig_y * omrs);
-    double const_numerator = -2.0 * rho * sig_x * sig_y;
-    double denominator = 2.0 * (rho - 1.0) * (rho + 1.0) * sgxs * sgys;
-    int mea = (int)sqrt((double)n);
-    int k = 0;
-    for(int i=0; i<mea; i++) {
+    double denom = 2.0 * (rho - 1.0) * (rho + 1.0) * sgxs * sgys;
+    double numer_const = -2.0 * rho * sig_x * sig_y;
+    double linear_term = amp * tem_a * sqrt(omrs);
+
+    int mea = (int)sqrt(n);
+    double *dst = dst_x;
+    for (int i=0; i<mea; i++) {
         double x = (double)i;
         double xmpx = x - pos_x;
-        for(int j=0; j<mea; j++) {
+        for (int j=0; j<mea; j++) {
             double y = (double)j;
             double ympy = y - pos_y;
-            dst_x[k++] = (
-                offset
-                + amp * tem_a * sqrt(omrs) * exp(
+            *dst++ = (
+                offset + linear_term * exp(
                     (
-                        const_numerator
+                        numer_const * xmpx * ympy
                         + sgxs * ympy * ympy
                         + sgys * xmpx * xmpx
-                    ) / denominator
+                    ) / denom
                 ) / pi2
             );
         }
     }
 }
-
 
 void jac_gauss_2d(double *p, double *dst_jac, int m, int n, void *data) {
     // Arguments:
@@ -61,7 +73,6 @@ void jac_gauss_2d(double *p, double *dst_jac, int m, int n, void *data) {
     //   m: number of parameters (length of p)
     //   n: number of data points
     //   data: data
-
     double amp = p[0];
     double sig_x = p[1];
     double sig_y = p[2];
@@ -153,7 +164,7 @@ int main(int argc, char **argv) {
     // GENERATE an example 2D gaussian with the following hard-coded parameters
     // into an 11x11 pixel grid.
     #define N_GAUSSIAN_2D_PARAMETERS (7)
-    double true_p[] = {
+    double true_p[N_GAUSSIAN_2D_PARAMETERS] = {
         100.0, // amp
         1.8, // sig_x
         1.2, // sig_y
@@ -175,18 +186,8 @@ int main(int argc, char **argv) {
 
     // START the fitter some offset form the true parameters
     // Note these initial guess parameters will be overwritten with the fit values
-    double guess_p[] = {
-        110.0, // amp
-        2.0, // sig_x
-        2.0, // sig_y
-        4.0, // pos_x
-        4.0, // pos_y
-        0.3, // rho
-        40.0, // offset
-    };
-
-    // CALL the LM fitter on the noisy_pixels
     double opts[LM_OPTS_SZ], info[LM_INFO_SZ];
+    // CALL the LM fitter on the noisy_pixels
     opts[0] = LM_INIT_MU;
         // scale factor for initial mu
     opts[1] = 1E-15;
@@ -201,26 +202,49 @@ int main(int argc, char **argv) {
         // which are more accurate (but slower!) compared to the forward differences
         // employed by default. Set to NULL for defaults to be used.
 
-    #define N_MAX_ITERATIONS (1000)
     int ret = 0;
+    int use_jacobian = 1;
 
-    // Without jacobain
-    ret = dlevmar_dif(
-        gauss_2d,
-        guess_p,
-        noisy_pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
-        N_MAX_ITERATIONS, opts, info, NULL, NULL, NULL
-    );
+    printf("use_jacobian=%d\n", use_jacobian);
 
-    // With jacobian
-    /*
-    ret = dlevmar_der(
-        gauss_2d, jac_gauss_2d,
-        guess_p,
-        noisy_pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
-        N_MAX_ITERATIONS, opts, info, NULL, NULL, NULL
-    );
-    */
+    Uint64 start = now();
+    double guess_p[N_GAUSSIAN_2D_PARAMETERS] = {
+        150.0, // amp
+        2.0, // sig_x
+        2.0, // sig_y
+        4.0, // pos_x
+        4.0, // pos_y
+        0.3, // rho
+        40.0, // offset
+    };
+    double fit_p[N_GAUSSIAN_2D_PARAMETERS];
+
+    const int n_trials = 100;
+    for(int trials=0; trials<n_trials; trials++) {
+        memcpy(fit_p, guess_p, sizeof(fit_p));
+        #define N_MAX_ITERATIONS (1000)
+
+        // With jacobian
+        if(use_jacobian) {
+            ret = dlevmar_der(
+                gauss_2d, jac_gauss_2d,
+                fit_p,
+                noisy_pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
+                N_MAX_ITERATIONS, opts, info, NULL, NULL, NULL
+            );
+        }
+        else {
+            // Without jacobian
+            ret = dlevmar_dif(
+                gauss_2d,
+                fit_p,
+                noisy_pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
+                N_MAX_ITERATIONS, opts, info, NULL, NULL, NULL
+            );
+        }
+    }
+    Uint64 stop = now();
+    printf("ran %d trials in %ld microsec (%f per trial)\n\n", n_trials, (stop - start), (double)(stop - start) / (double)n_trials );
 
     char *reasons[] = {
         "Unknown",
@@ -240,7 +264,7 @@ int main(int argc, char **argv) {
     printf("Levenberg-Marquardt returned %d in %g iter, reason %g '%s'\n", ret, info[5], info[6], reasons[(int)info[6]]);
     printf("Solution:\n");
     for(int i=0; i<N_GAUSSIAN_2D_PARAMETERS; ++i) {
-        printf("%.7g ", guess_p[i]);
+        printf("  %.7g diff=(%.7g, %2.2f%%)\n", fit_p[i], fit_p[i]-true_p[i], (100.0 * (fit_p[i]-true_p[i])) / true_p[i]);
     }
     printf("\n\n");
     printf("Minimization info:\n");
