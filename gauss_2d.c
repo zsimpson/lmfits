@@ -5,7 +5,6 @@
 #include "time.h"
 #include "string.h"
 #include "levmar.h"
-
 #ifndef LM_DBL_PREC
 #error Demo program assumes that levmar has been compiled with double precision, see LM_DBL_PREC!
 #endif
@@ -142,20 +141,21 @@ void jac_gauss_2d(double *p, double *dst_jac, int m, int n, void *data) {
     }
 }
 
-double dlevmar_opts[LM_OPTS_SZ];
-dlevmar_opts[0] = LM_INIT_MU;
-    // scale factor for initial mu
-dlevmar_opts[1] = 1E-15;
-    // stopping threshold for ||J^T e||_inf
-dlevmar_opts[2] = 1E-15;
-    // stopping threshold for ||Dp||^2
-dlevmar_opts[3] = 1E-20;
-    // stopping threshold for ||e||^2
-dlevmar_opts[4] = LM_DIFF_DELTA;
-    // step used in difference approximation to the Jacobian.
-    // If delta<0, the Jacobian is approximated  with central differences
-    // which are more accurate (but slower!) compared to the forward differences
-    // employed by default. Set to NULL for defaults to be used.
+double dlevmar_opts[LM_OPTS_SZ] = {
+    LM_INIT_MU,
+        // scale factor for initial mu
+    1e-15,
+        // stopping threshold for ||J^T e||_inf
+    1e-15,
+        // stopping threshold for ||Dp||^2
+    1e-20,
+        // stopping threshold for ||e||^2
+    LM_DIFF_DELTA
+        // step used in difference approximation to the Jacobian.
+        // If delta<0, the Jacobian is approximated  with central differences
+        // which are more accurate (but slower!) compared to the forward differences
+        // employed by default. Set to NULL for defaults to be used.
+};
 
 char *dlevmar_stop_reasons[] = {
     "Unknown",
@@ -210,14 +210,13 @@ int fit_gauss_2d(double *pixels, int mea, double params[7], double *info, double
     */
 
     int n_pixels = mea * mea;
-    double info[LM_INFO_SZ];
     int ret = 0;
 
     ret = dlevmar_der(
         gauss_2d, jac_gauss_2d,
-        fit_p,
+        params,
         pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
-        N_MAX_ITERATIONS, opts, info,
+        N_MAX_ITERATIONS, dlevmar_opts, info,
         NULL,
             // This is a working buffer that will be allocated if NULL
             // I timed it and it made no difference so it seemed easier
@@ -229,9 +228,9 @@ int fit_gauss_2d(double *pixels, int mea, double params[7], double *info, double
     /*
     ret = dlevmar_dif(
         gauss_2d,
-        fit_p,
+        params,
         pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
-        N_MAX_ITERATIONS, opts, info,
+        N_MAX_ITERATIONS, dlevmar_opts, info,
         NULL,  // See above about working buffer
         covar, NULL
     );
@@ -239,3 +238,81 @@ int fit_gauss_2d(double *pixels, int mea, double params[7], double *info, double
 
     return ret;
 }
+
+
+#ifdef TEST_MAIN
+double rand_double(double _min, double _max) {
+    double scale = rand() / (double)RAND_MAX;
+    return _min + scale * (_max - _min);
+}
+
+int main(int argc, char **argv) {
+    /*
+    TODO
+    if(argc == 1) {
+        printf("lmfitter\n");
+        printf("  mode: String[dif|der]\n");
+        printf("        dif=finite difference mode\n");
+        printf("        der=analytic derivative mode\n");
+        return 1;
+    }
+    */
+
+    // GENERATE an example 2D gaussian with the following hard-coded parameters
+    // into an 11x11 pixel grid.
+    #define N_GAUSSIAN_2D_PARAMETERS (7)
+    double true_p[N_GAUSSIAN_2D_PARAMETERS] = {
+        100.0, // amp
+        1.8, // sig_x
+        1.2, // sig_y
+        5.0, // pos_x
+        4.8, // pos_y
+        0.5, // rho
+        50.0, // offset
+    };
+    int mea = 11;
+    int n_pixels = mea * mea;
+    double *true_pixels = (double *)alloca(sizeof(double) * n_pixels);
+    gauss_2d(true_p, true_pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels, true_pixels);
+
+    // ADD some noise to the true_pixels to make noisy_pixels
+    double *noisy_pixels = (double *)alloca(sizeof(double) * n_pixels);
+    for(int i=0; i<n_pixels; i++) {
+        noisy_pixels[i] = true_pixels[i] + rand_double(-0.1, 0.1);
+    }
+
+    double guess_p[N_GAUSSIAN_2D_PARAMETERS] = {
+        150.0, // amp
+        2.0, // sig_x
+        2.0, // sig_y
+        4.0, // pos_x
+        4.0, // pos_y
+        0.3, // rho
+        40.0, // offset
+    };
+
+    double fit_p[N_GAUSSIAN_2D_PARAMETERS];
+    memcpy(fit_p, guess_p, sizeof(fit_p));
+
+    double info[10];
+    int ret = fit_gauss_2d(noisy_pixels, mea, fit_p, info, NULL);
+
+    if(ret < 0) {
+        printf("Levenberg-Marquardt Failed\n");
+    }
+
+    printf("Levenberg-Marquardt returned %d in %g iter, reason %g '%s'\n", ret, info[5], info[6], dlevmar_stop_reasons[(int)info[6]]);
+    printf("Solution:\n");
+    for(int i=0; i<N_GAUSSIAN_2D_PARAMETERS; ++i) {
+        printf("  %.7g diff=(%.7g, %2.2f%%)\n", fit_p[i], fit_p[i]-true_p[i], (100.0 * (fit_p[i]-true_p[i])) / true_p[i]);
+    }
+    printf("\n\n");
+    printf("Minimization info:\n");
+    for(int i=0; i<LM_INFO_SZ; ++i) {
+        printf("%g ", info[i]);
+    }
+    printf("\n");
+
+    return ret;
+}
+#endif
