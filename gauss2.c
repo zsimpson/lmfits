@@ -188,6 +188,7 @@ int main(int argc, char **argv) {
         noisy_pixels[i] = true_pixels[i] + rand_double(-0.1, 0.1);
     }
 
+
     // START the fitter some offset form the true parameters
     // Note these initial guess parameters will be overwritten with the fit values
     double opts[LM_OPTS_SZ], info[LM_INFO_SZ];
@@ -209,6 +210,20 @@ int main(int argc, char **argv) {
     int ret = 0;
     int use_jacobian = 1;
 
+    double *work;
+    /*
+    I timed the pre-allocation of these work buffers and it really make no
+    difference so it isn't worth the hassle.
+
+    if(use_jacobian) {
+        work = (double*)alloca(sizeof(double) * LM_DER_WORKSZ(N_GAUSSIAN_2D_PARAMETERS, n_pixels));
+    }
+    else {
+        work = (double*)alloca(sizeof(double) * LM_DIF_WORKSZ(N_GAUSSIAN_2D_PARAMETERS, n_pixels));
+    }
+    */
+    work = NULL;
+
     printf("use_jacobian=%d\n", use_jacobian);
 
     Uint64 start = now();
@@ -223,7 +238,7 @@ int main(int argc, char **argv) {
     };
     double fit_p[N_GAUSSIAN_2D_PARAMETERS];
 
-    const int n_trials = 100;
+    const int n_trials = 1000;
     for(int trials=0; trials<n_trials; trials++) {
         memcpy(fit_p, guess_p, sizeof(fit_p));
         #define N_MAX_ITERATIONS (1000)
@@ -234,7 +249,7 @@ int main(int argc, char **argv) {
                 gauss_2d, jac_gauss_2d,
                 fit_p,
                 noisy_pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
-                N_MAX_ITERATIONS, opts, info, NULL, NULL, NULL
+                N_MAX_ITERATIONS, opts, info, work, NULL, NULL
             );
         }
         else {
@@ -243,7 +258,7 @@ int main(int argc, char **argv) {
                 gauss_2d,
                 fit_p,
                 noisy_pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
-                N_MAX_ITERATIONS, opts, info, NULL, NULL, NULL
+                N_MAX_ITERATIONS, opts, info, work, NULL, NULL
             );
         }
     }
