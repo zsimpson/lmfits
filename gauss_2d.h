@@ -40,6 +40,15 @@ typedef double np_float64;
 // In all of the following, the Gaussian parameters are in the order:
 //    amplitude, sigma_x, sigma_y, pos_x, pos_y, rho, offset
 
+#define N_GAUSSIAN_2D_PARAMETERS (7)
+#define N_INFO_ELEMENTS (10)
+#define N_MAX_ITERATIONS (1000)
+
+void gauss_2d(double *p, double *dst_x, int m, int n, void *data);
+void jac_gauss_2d(double *p, double *dst_jac, int m, int n, void *data);
+char *get_dlevmar_stop_reason(int reason);
+
+
 int fit_gauss_2d(
     np_float64 *pixels,
     np_int64 mea,
