@@ -6,12 +6,41 @@
 #include "string.h"
 #include "levmar.h"
 #include "gauss_2d.h"
+#include "assert.h"
 #ifndef LM_DBL_PREC
 #error Demo program assumes that levmar has been compiled with double precision, see LM_DBL_PREC!
 #endif
 
 // A Gaussian 2D fitter using Levenberg-Marquardt algorithm
 // implemented with levmar-2.6. See http://users.ics.forth.gr/~lourakis/levmar/
+
+
+void debug_float64_array(char *header, np_float64 *arr, int len) {
+    printf("%s\n", header);
+    for(int i=0; i<len; i++ ) {
+        printf("%f ", arr[i]);
+    }
+    printf("\n");
+}
+
+
+void debug_float32_array(char *header, np_float32 *arr, int len) {
+    printf("%s\n", header);
+    for(int i=0; i<len; i++ ) {
+        printf("%f ", arr[i]);
+    }
+    printf("\n");
+}
+
+
+void debug_int64_array(char *header, np_int64 *arr, int len) {
+    printf("%s\n", header);
+    for(int i=0; i<len; i++ ) {
+        printf("%ld ", arr[i]);
+    }
+    printf("\n");
+}
+
 
 void gauss_2d(double *p, double *dst_x, int m, int n, void *data) {
     // Arguments:
@@ -28,6 +57,8 @@ void gauss_2d(double *p, double *dst_x, int m, int n, void *data) {
     double pos_y = p[4];
     double rho = p[5];
     double offset = p[6];
+
+    // printf("WORKING: %-4.2f %-4.2f %-4.2f %-4.2f %-4.2f %-4.2f %-4.2f\n", amp, sig_x, sig_y, pos_x, pos_y, rho, offset);
 
     double pi2 = 2.0 * M_PI;
     double sgxs = sig_x * sig_x;
@@ -171,9 +202,10 @@ char *dlevmar_stop_reasons[] = {
 
 
 #define N_GAUSSIAN_2D_PARAMETERS (7)
+#define N_INFO_ELEMENTS (10)
 #define N_MAX_ITERATIONS (1000)
 
-int fit_gauss_2d(double *pixels, int mea, double params[7], double *info, double *covar) {
+int fit_gauss_2d(np_float64 *pixels, np_int64 mea, np_float64 params[7], np_float64 *info, np_float64 *covar) {
     /*
     Fit a 2D Gaussian given a square array of pixels with length of size "mea"
 
@@ -208,36 +240,188 @@ int fit_gauss_2d(double *pixels, int mea, double params[7], double *info, double
         covar:
             A array [7x7] (or NULL) will be filled in with the fitter's covariance
             estimate on parameters.
+
+    Returns:
+        0 on success, -1 on any sort of error
     */
 
     int n_pixels = mea * mea;
     int ret = 0;
 
     ret = dlevmar_der(
-        gauss_2d, jac_gauss_2d,
-        params,
-        pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
-        N_MAX_ITERATIONS, dlevmar_opts, info,
+        gauss_2d,
+        jac_gauss_2d,
+        (double *)params,
+        (double *)pixels,
+        N_GAUSSIAN_2D_PARAMETERS,
+        n_pixels,
+        N_MAX_ITERATIONS,
+        dlevmar_opts,
+        (double *)info,
         NULL,
             // This is a working buffer that will be allocated if NULL
             // I timed it and it made no difference so it seemed easier
             // to let levmar handle malloc/free.
-        covar, NULL
+        (double *)covar, NULL
     );
 
     // Without jacobian, useful for sanity checking
+//    ret = dlevmar_dif(
+//        gauss_2d,
+//        params,
+//        pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
+//        N_MAX_ITERATIONS, dlevmar_opts, info,
+//        NULL,  // See above about working buffer
+//        covar, NULL
+//    );
+
+    return ret > 0 ? 0 : -1;
+}
+
+
+int fit_gauss_2d_on_float_image(
+    np_float32 *im,
+    np_int64 im_h,
+    np_int64 im_w,
+    np_int64 center_y,
+    np_int64 center_x,
+    np_int64 mea,
+    np_float64 params[7],
+    np_float64 *info,
+    np_float64 *covar
+) {
     /*
-    ret = dlevmar_dif(
-        gauss_2d,
-        params,
-        pixels, N_GAUSSIAN_2D_PARAMETERS, n_pixels,
-        N_MAX_ITERATIONS, dlevmar_opts, info,
-        NULL,  // See above about working buffer
-        covar, NULL
-    );
+    Like fit_gauss_2d but operates on an image with specified dimensions.
+    Skip if the peak is even partially over-edges.
+
+    Arguments:
+        im, im_h, im_w: A float image of im_h, im_w pixels
+        center_y, center_x: Coordinate of the center where the peak is extracted
+        mea: length of side of square area to extract (must be odd)
+        *: See fit_gauss_2d
+
+    Returns:
+         0 if success
+        -1 if the fitter returned an error
+        -2 if any portion of the request is outside the bounds of im.
     */
 
-    return ret;
+    assert(mea & 1 == 1);  // Must be odd so that there is a center pixel
+    int half_mea = mea / 2;
+    int n_pixels = mea * mea;
+    int ret = 0;
+
+    double *pixels = (double *)alloca(sizeof(double) * mea * mea);
+    double *dst = pixels;
+    int top = center_y - half_mea;
+    int bot = center_y + half_mea;
+    int lft = center_x - half_mea;
+    int rgt = center_x + half_mea;
+
+    if(top < 0 || bot >= im_h || lft < 0 || rgt >= im_w) {
+        return -2;
+    }
+
+    // CONVERT to a linear array of doubles
+    for(int y=top; y<=bot; y++) {
+        float *src = &im[y * im_w + lft];
+        for(int x=lft; x<=rgt; x++) {
+            *dst++ = (double)*src++;
+        }
+    }
+
+//    printf("PIXELS in fit_gauss_2d_on_float_image:\n");
+//    for(int y=0; y<mea; y++) {
+//        for(int x=0; x<mea; x++) {
+//            printf("%6.2f ", pixels[y*mea + x]);
+//        }
+//        printf("\n");
+//    }
+
+    ret = dlevmar_der(
+        gauss_2d,
+        jac_gauss_2d,
+        (double *)params,
+        pixels,
+        N_GAUSSIAN_2D_PARAMETERS,
+        n_pixels,
+        N_MAX_ITERATIONS,
+        dlevmar_opts,
+        (double *)info,
+        NULL,
+            // This is a working buffer that will be allocated if NULL
+            // I timed it and it made no difference so it seemed easier
+            // to let levmar handle malloc/free.
+        (double *)covar,
+        NULL
+    );
+
+//    ret = dlevmar_dif(
+//        gauss_2d,
+//        params,
+//        pixels,
+//        N_GAUSSIAN_2D_PARAMETERS,
+//        n_pixels,
+//        N_MAX_ITERATIONS,
+//        dlevmar_opts,
+//        info,
+//        NULL,  // See above about working buffer
+//        covar,
+//        NULL
+//    );
+
+    return ret > 0 ? 0 : ret;
+}
+
+int fit_array_of_gauss_2d_on_float_image(
+    np_float32 *im,
+    np_int64 im_h,
+    np_int64 im_w,
+    np_int64 mea,
+    np_int64 n_peaks,
+    np_int64 *center_y,
+    np_int64 *center_x,
+    np_float64 *params,
+    np_int64 *fails
+) {
+    /*
+    Call fit_gauss_2d_on_float_image on an array of peak locations
+
+    Arguments:
+        See fit_gauss_2d_on_float_image
+        n_peaks: number of elements in the center_y and center_x arrays
+        center_y, center_x: Peak positions
+        params: n_peaks * 7 doubles expected to be initialized to a guess of the paramters
+        fails: n_peaks. Will be zero if success or non-zero on any sort of failure
+
+    Returns:
+        Number of failures
+    */
+
+    np_float64 info[N_INFO_ELEMENTS];
+    assert(sizeof(np_int64) == 8);
+
+    np_int64 n_fails = 0;
+    for(np_int64 peak_i=0; peak_i<n_peaks; peak_i++) {
+        np_float64 *p = &params[peak_i * N_GAUSSIAN_2D_PARAMETERS];
+
+        int res = fit_gauss_2d_on_float_image(
+            im,
+            im_h,
+            im_w,
+            center_y[peak_i],
+            center_x[peak_i],
+            mea,
+            p,
+            info,
+            NULL
+        );
+        int failed = (res != 0) ? 1 : 0;
+        n_fails += failed;
+        fails[peak_i] = failed;
+    }
+
+    return n_fails;
 }
 
 
@@ -248,27 +432,16 @@ double rand_double(double _min, double _max) {
 }
 
 int main(int argc, char **argv) {
-    /*
-    TODO
-    if(argc == 1) {
-        printf("lmfitter\n");
-        printf("  mode: String[dif|der]\n");
-        printf("        dif=finite difference mode\n");
-        printf("        der=analytic derivative mode\n");
-        return 1;
-    }
-    */
-
     // GENERATE an example 2D gaussian with the following hard-coded parameters
     // into an 11x11 pixel grid.
     #define N_GAUSSIAN_2D_PARAMETERS (7)
     double true_p[N_GAUSSIAN_2D_PARAMETERS] = {
-        100.0, // amp
+        1000.0, // amp
         1.8, // sig_x
         1.2, // sig_y
         5.0, // pos_x
         4.8, // pos_y
-        0.5, // rho
+        0.05, // rho
         50.0, // offset
     };
     int mea = 11;
@@ -282,8 +455,17 @@ int main(int argc, char **argv) {
         noisy_pixels[i] = true_pixels[i] + rand_double(-0.1, 0.1);
     }
 
+    printf("PIXELS:\n");
+    for(int y=0; y<mea; y++) {
+        printf("[ ");
+        for(int x=0; x<mea; x++) {
+            printf("%4.2f, ", true_pixels[y*mea + x]);
+        }
+        printf(" ],\n");
+    }
+
     double guess_p[N_GAUSSIAN_2D_PARAMETERS] = {
-        150.0, // amp
+        1050.0, // amp
         2.0, // sig_x
         2.0, // sig_y
         4.0, // pos_x
@@ -316,4 +498,6 @@ int main(int argc, char **argv) {
 
     return ret;
 }
+
+
 #endif
