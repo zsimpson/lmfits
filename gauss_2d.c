@@ -15,33 +15,6 @@
 // implemented with levmar-2.6. See http://users.ics.forth.gr/~lourakis/levmar/
 
 
-void debug_float64_array(char *header, np_float64 *arr, int len) {
-    printf("%s\n", header);
-    for(int i=0; i<len; i++ ) {
-        printf("%f ", arr[i]);
-    }
-    printf("\n");
-}
-
-
-void debug_float32_array(char *header, np_float32 *arr, int len) {
-    printf("%s\n", header);
-    for(int i=0; i<len; i++ ) {
-        printf("%f ", arr[i]);
-    }
-    printf("\n");
-}
-
-
-void debug_int64_array(char *header, np_int64 *arr, int len) {
-    printf("%s\n", header);
-    for(int i=0; i<len; i++ ) {
-        printf("%ld ", arr[i]);
-    }
-    printf("\n");
-}
-
-
 void gauss_2d(double *p, double *dst_x, int m, int n, void *data) {
     // Arguments:
     //   p: parameters of the 2D Gaussian: array [amp, sig_x, sig_y, pos_x, pos_y, rho, offset]
@@ -306,7 +279,7 @@ int fit_gauss_2d_on_float_image(
         -2 if any portion of the request is outside the bounds of im.
     */
 
-    assert(mea & 1 == 1);  // Must be odd so that there is a center pixel
+    assert((mea & 1) == 1);  // Must be odd so that there is a center pixel
     int half_mea = mea / 2;
     int n_pixels = mea * mea;
     int ret = 0;
