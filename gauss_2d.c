@@ -13,6 +13,7 @@
 
 // A Gaussian 2D fitter using Levenberg-Marquardt algorithm
 // implemented with levmar-2.6. See http://users.ics.forth.gr/~lourakis/levmar/
+// Thanks to John Haven Davis for the Jacobian
 
 
 void gauss_2d(double *p, double *dst_x, int m, int n, void *data) {
@@ -30,8 +31,6 @@ void gauss_2d(double *p, double *dst_x, int m, int n, void *data) {
     double pos_y = p[4];
     double rho = p[5];
     double offset = p[6];
-
-    // printf("WORKING: %-4.2f %-4.2f %-4.2f %-4.2f %-4.2f %-4.2f %-4.2f\n", amp, sig_x, sig_y, pos_x, pos_y, rho, offset);
 
     double pi2 = 2.0 * M_PI;
     double sgxs = sig_x * sig_x;
@@ -229,13 +228,6 @@ int fit_gauss_2d(np_float64 *pixels, np_int64 mea, np_float64 params[7], np_floa
     int n_pixels = mea * mea;
     int ret = 0;
 
-//    for(int y=0; y<mea; y++) {
-//        for(int x=0; x<mea; x++) {
-//            printf("%f ", pixels[mea * y + x]);
-//        }
-//        printf("\n");
-//    }
-
     ret = dlevmar_der(
         gauss_2d,
         jac_gauss_2d,
@@ -317,14 +309,6 @@ int fit_gauss_2d_on_float_image(
             *dst++ = (double)*src++;
         }
     }
-
-//    printf("PIXELS in fit_gauss_2d_on_float_image:\n");
-//    for(int y=0; y<mea; y++) {
-//        for(int x=0; x<mea; x++) {
-//            printf("%6.2f ", pixels[y*mea + x]);
-//        }
-//        printf("\n");
-//    }
 
     ret = dlevmar_der(
         gauss_2d,

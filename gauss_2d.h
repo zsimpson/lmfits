@@ -42,7 +42,7 @@ typedef double np_float64;
 
 #define N_GAUSSIAN_2D_PARAMETERS (7)
 #define N_INFO_ELEMENTS (10)
-#define N_MAX_ITERATIONS (1000)
+#define N_MAX_ITERATIONS (75)
 
 void gauss_2d(double *p, double *dst_x, int m, int n, void *data);
 void jac_gauss_2d(double *p, double *dst_jac, int m, int n, void *data);
