@@ -225,8 +225,16 @@ int fit_gauss_2d(np_float64 *pixels, np_int64 mea, np_float64 params[7], np_floa
         0 on success, -1 on any sort of error
     */
 
+    assert(sizeof(np_float64) == 8);
     int n_pixels = mea * mea;
     int ret = 0;
+
+//    for(int y=0; y<mea; y++) {
+//        for(int x=0; x<mea; x++) {
+//            printf("%f ", pixels[mea * y + x]);
+//        }
+//        printf("\n");
+//    }
 
     ret = dlevmar_der(
         gauss_2d,
@@ -397,7 +405,9 @@ int fit_array_of_gauss_2d_on_float_image(
             info,
             NULL
         );
-        int failed = (res != 0) ? 1 : 0;
+
+        int failed_to_converge = (int)info[6] == 3;
+        int failed = (res != 0 || failed_to_converge) ? 1 : 0;
         n_fails += failed;
         fails[peak_i] = failed;
     }
